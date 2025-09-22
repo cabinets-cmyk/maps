@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WA Emergency & Planning Map</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+
+  <script src="https://unpkg.com/esri-leaflet@3.0.11/dist/esri-leaflet.js" crossorigin></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+    header { display:flex; gap:.75rem; align-items:center; padding:.5rem .75rem; background:#0c1320; color:#e7eefc; }
+    header h1 { margin:0; font-size:1rem; }
+    .toolbar { margin-left:auto; display:flex; gap:.5rem; }
+    .btn { background:#141c2b; color:#e7eefc; border:1px solid #22304a; padding:.4rem .6rem; border-radius:.4rem; cursor:pointer; }
+    #map { width: 100%; height: 100%; }
+    .sidebar { position:absolute; top:64px; left:10px; width:320px; max-width:calc(100vw - 20px); max-height:calc(100% - 74px); overflow:auto; background:#141c2b; color:#e7eefc; border:1px solid #22304a; border-radius:.6rem; z-index:1000; }
+    .sidebar header { position:sticky; top:0; background:#141c2b; padding:.6rem .75rem; border-bottom:1px solid #22304a; border-radius:.6rem .6rem 0 0; }
+    .group { padding:.5rem .75rem; border-bottom:1px dashed #22304a; }
+    .group:last-child { border-bottom:0; }
+    .layer-row { display:flex; align-items:center; justify-content:space-between; padding:.25rem 0; }
+    .legend { padding:.5rem .75rem .8rem; }
+    .popup { font-size:.9rem; }
+    @media (max-width:640px){ .sidebar { bottom:10px; top:auto; right:10px; left:10px; width:auto; max-height:55%; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>WA Emergency & Planning Map</h1>
+      <div class="toolbar">
+        <button id="streetBtn" class="btn" aria-pressed="true">Street</button>
+        <button id="satBtn" class="btn" aria-pressed="false">Satellite</button>
+        <button id="resetBtn" class="btn">Reset view</button>
+        <button id="fitVisibleBtn" class="btn">Fit to layers</button>
+      </div>
+    </header>
+    <div id="map"></div>
+
+    <aside class="sidebar">
+      <header><strong>Layers</strong></header>
+
+      <div class="group">
+        <div class="layer-row"><label><input type="checkbox" data-layer="dfesRegions"> DFES Regions</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="frsDistricts"> Gazetted Fire Districts</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="dbcaRegionalParks"> DBCA Area (Regional Parks)</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="dbcaRegions"> DBCA Boundaries (Regions)</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="dbcaDistricts"> DBCA Districts</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="oemBoundaries"> Emergency Management Boundaries</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="lgaBoundaries"> LGA Boundaries</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="townsites"> Townsites</label></div>
+      </div>
+
+      <div class="group">
+        <div class="layer-row"><label><input type="checkbox" data-layer="dfesStations"> DFES Stations</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="iccSites"> DBCA ICC Locations</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="hydrants"> Hydrants</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="standpipes"> Stand Pipes</label></div>
+        <div class="layer-row"><label><input type="checkbox" data-layer="ach"> ACH</label></div>
+      </div>
+
+      <div class="legend">
+        Tip: If nothing shows, zoom into WA and check the browser console for any blocked requests.
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    // Basemaps
+    const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+    const satellite = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' });
+
+    const map = L.map('map', { center: [-27, 121], zoom: 5, layers: [street] });
+    const waBounds = L.latLngBounds(L.latLng(-35.5, 112.8), L.latLng(-13.3, 129.2));
+    map.fitBounds(waBounds);
+
+    // Services
+    const svc = {
+      dfesRegions: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/2',
+      frsDistricts: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/3',
+      dfesStations: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer/33',
+      dbcaRegionalParks: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/4',
+      dbcaRegions: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/5',
+      dbcaDistricts: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/8',
+      iccSites: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Environment/MapServer/57',
+      oemBoundaries: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/31',
+      hydrants: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer/6',
+      standpipes: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer/7',
+      ach: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/People_and_Society/MapServer/18',
+      lgaBoundaries: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/14',
+      townsites: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/15'
+    };
+
+    // Styles (give polygons a slight fill so you can see them immediately)
+    const styles = {
+      dfesRegion: { color:'#8ED8F9', weight:2, fillColor:'#8ED8F9', fillOpacity:0.08 },
+      frsDistrict: { color:'#FF0000', weight:2, fillColor:'#FF0000', fillOpacity:0.06 },
+      parks: { color:'#0072FE', weight:2, fillColor:'#0072FE', fillOpacity:0.05 },
+      dbca: { color:'#DD99FF', weight:2, fillColor:'#DD99FF', fillOpacity:0.05 },
+      oem: { color:'#6e6e6e', weight:1, fillColor:'#c9f2d0', fillOpacity:0.3 },
+      lga: { color:'#666', weight:1, fillColor:'#ffdf80', fillOpacity:0.2 },
+      generic: { color:'#4CB3FF', weight:1, fillColor:'#4CB3FF', fillOpacity:0.08 }
+    };
+    const pointSym = (c) => ({ radius:5, color:'#000', weight:1, fillColor:c, fillOpacity:0.9 });
+
+    // Helper to log layer load errors
+    function withErrorLog(layer, name){
+      layer.on('requesterror', e => console.error(`Layer ${name} error:`, e));
+      layer.on('loading', () => console.log(`Loading ${name}...`));
+      layer.on('load', () => console.log(`Loaded ${name}`));
+      return layer;
+    }
+
+    // Layers
+    const layers = {
+      dfesRegions: withErrorLog(L.esri.featureLayer({ url: svc.dfesRegions, style: styles.dfesRegion }), 'DFES Regions'),
+      frsDistricts: withErrorLog(L.esri.featureLayer({ url: svc.frsDistricts, style: styles.frsDistrict }), 'FRS Districts'),
+      dbcaRegionalParks: withErrorLog(L.esri.featureLayer({ url: svc.dbcaRegionalParks, style: styles.parks }), 'DBCA Regional Parks'),
+      dbcaRegions: withErrorLog(L.esri.featureLayer({ url: svc.dbcaRegions, style: styles.dbca }), 'DBCA Regions'),
+      dbcaDistricts: withErrorLog(L.esri.featureLayer({ url: svc.dbcaDistricts, style: styles.dbca }), 'DBCA Districts'),
+      oemBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.oemBoundaries, style: styles.oem }), 'OEM Boundaries'),
+      lgaBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.lgaBoundaries, style: styles.lga }), 'LGA Boundaries'),
+      townsites: withErrorLog(L.esri.featureLayer({ url: svc.townsites, style: styles.generic }), 'Townsites'),
+
+      dfesStations: withErrorLog(L.esri.featureLayer({
+        url: svc.dfesStations,
+        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#ffcc00'))
+      }), 'DFES Stations'),
+
+      iccSites: withErrorLog(L.esri.featureLayer({
+        url: svc.iccSites,
+        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#00c853'))
+      }), 'ICC Sites'),
+
+      // Heavy point layers: only draw when zoomed in (>= 12). Adjust as needed.
+      hydrants: withErrorLog(L.esri.featureLayer({
+        url: svc.hydrants,
+        minZoom: 12,
+        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#00bcd4'))
+      }), 'Hydrants'),
+
+      standpipes: withErrorLog(L.esri.featureLayer({
+        url: svc.standpipes,
+        minZoom: 10,
+        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#ff6d00'))
+      }), 'Stand Pipes'),
+
+      ach: withErrorLog(L.esri.featureLayer({ url: svc.ach, style: styles.generic }), 'ACH')
+    };
+
+    // Popups (simple generic popups)
+    function bindSimplePopup(layer, titleField) {
+      layer.bindPopup(function (l) {
+        const p = l.feature && l.feature.properties ? l.feature.properties : {};
+        const title = (titleField && p[titleField]) ? p[titleField] : (p.name || 'Feature');
+        const rows = Object.entries(p).slice(0, 12).map(([k, v]) => `<div><strong>${k}</strong>: ${v ?? ''}</div>`).join('');
+        return `<div class="popup"><h4>${title}</h4>${rows}</div>`;
+      });
+    }
+    bindSimplePopup(layers.dfesRegions, 'name');
+    bindSimplePopup(layers.frsDistricts, 'name');
+    bindSimplePopup(layers.dbcaRegionalParks, 'rpk_reg_park');
+    bindSimplePopup(layers.dbcaRegions, 'drg_region_name');
+    bindSimplePopup(layers.dbcaDistricts, 'ddt_district_name');
+    bindSimplePopup(layers.oemBoundaries, 'name');
+    bindSimplePopup(layers.lgaBoundaries, undefined);
+    bindSimplePopup(layers.townsites, undefined);
+    bindSimplePopup(layers.dfesStations, 'displaynam');
+    bindSimplePopup(layers.iccSites, 'fic_site_name');
+    bindSimplePopup(layers.hydrants, 'sap_name');
+    bindSimplePopup(layers.standpipes, 'sap_name');
+    bindSimplePopup(layers.ach, undefined);
+
+    // Toggle logic
+    const active = new Set();
+    function toggleLayer(key, on) {
+      const layer = layers[key];
+      if (!layer) return;
+      if (on) { layer.addTo(map); active.add(key); }
+      else { map.removeLayer(layer); active.delete(key); }
+    }
+
+    document.querySelectorAll('input[type=checkbox][data-layer]').forEach(cb => {
+      cb.addEventListener('change', e => toggleLayer(e.target.dataset.layer, e.target.checked));
+    });
+
+    // Default visible
+    ['dfesRegions','frsDistricts','dfesStations'].forEach(k => {
+      toggleLayer(k, true);
+      document.querySelector(`input[data-layer="${k}"]`).checked = true;
+    });
+
+    // Basemap buttons
+    function setBasemap(which) {
+      if (which === 'street') {
+        if (map.hasLayer(satellite)) map.removeLayer(satellite);
+        if (!map.hasLayer(street)) map.addLayer(street);
+        document.getElementById('streetBtn').setAttribute('aria-pressed', 'true');
+        document.getElementById('satBtn').setAttribute('aria-pressed', 'false');
+      } else {
+        if (map.hasLayer(street)) map.removeLayer(street);
+        if (!map.hasLayer(satellite)) map.addLayer(satellite);
+        document.getElementById('streetBtn').setAttribute('aria-pressed', 'false');
+        document.getElementById('satBtn').setAttribute('aria-pressed', 'true');
+      }
+    }
+    document.getElementById('streetBtn').onclick = () => setBasemap('street');
+    document.getElementById('satBtn').onclick = () => setBasemap('sat');
+
+    // Fit/Reset
+    document.getElementById('resetBtn').onclick = () => map.fitBounds(waBounds);
+    document.getElementById('fitVisibleBtn').onclick = () => {
+      const bounds = L.latLngBounds([]);
+      active.forEach(k => {
+        const lyr = layers[k];
+        if (lyr.getBounds && lyr.getBounds().isValid()) bounds.extend(lyr.getBounds());
+      });
+      if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
+      else map.fitBounds(waBounds);
+    };
+  </script>
+</body>
+</html>

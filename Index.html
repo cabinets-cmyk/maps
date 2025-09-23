@@ -2,29 +2,97 @@
 <html lang="en-AU">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>WA Emergency & Planning Map</title>
 
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+
+  <!-- Esri Leaflet -->
   <script src="https://unpkg.com/esri-leaflet@3.0.11/dist/esri-leaflet.js" crossorigin></script>
 
   <style>
-    html, body { height: 100%; margin: 0; }
-    #app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-    header { display:flex; gap:.75rem; align-items:center; padding:.5rem .75rem; background:#0c1320; color:#e7eefc; }
-    header h1 { margin:0; font-size:1rem; }
-    .toolbar { margin-left:auto; display:flex; gap:.5rem; }
-    .btn { background:#141c2b; color:#e7eefc; border:1px solid #22304a; padding:.4rem .6rem; border-radius:.4rem; cursor:pointer; }
-    #map { width: 100%; height: 100%; }
-    .sidebar { position:absolute; top:64px; left:10px; width:320px; max-width:calc(100vw - 20px); max-height:calc(100% - 74px); overflow:auto; background:#141c2b; color:#e7eefc; border:1px solid #22304a; border-radius:.6rem; z-index:1000; }
-    .sidebar header { position:sticky; top:0; background:#141c2b; padding:.6rem .75rem; border-bottom:1px solid #22304a; border-radius:.6rem .6rem 0 0; }
-    .group { padding:.5rem .75rem; border-bottom:1px dashed #22304a; }
-    .group:last-child { border-bottom:0; }
-    .layer-row { display:flex; align-items:center; justify-content:space-between; padding:.25rem 0; }
-    .legend { padding:.5rem .75rem .8rem; }
-    .popup { font-size:.9rem; }
-    @media (max-width:640px){ .sidebar { bottom:10px; top:auto; right:10px; left:10px; width:auto; max-height:55%; } }
+    :root{
+      --bg:#0b1220; --panel:#141c2b; --text:#e7eefc; --muted:#a9b3c7; --accent:#4cb3ff;
+      --border:#22304a; --danger:#ff4d4f; --ok:#28c76f;
+    }
+    html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    #app { height:100%; display:grid; grid-template-rows:auto 1fr; }
+
+    header {
+      display:flex; align-items:center; gap:.75rem; padding:.6rem .8rem;
+      background:linear-gradient(180deg, #10192a, #0c1320); border-bottom:1px solid var(--border);
+    }
+    header h1 { font-size:1rem; margin:0; }
+    .toolbar { margin-left:auto; display:flex; gap:.5rem; flex-wrap:wrap; }
+    .btn {
+      background:var(--panel); color:var(--text); border:1px solid var(--border);
+      padding:.45rem .65rem; border-radius:.5rem; cursor:pointer; font-size:.9rem;
+    }
+    .btn[aria-pressed="true"] { outline:2px solid var(--accent); }
+    #map { width:100%; height:100%; }
+
+    /* Floating "Layers" control as a bottom sheet / popover */
+    .fab {
+      position: absolute; right: 12px; bottom: 12px; z-index: 1100;
+      display:flex; gap:10px; flex-direction:column;
+    }
+    .fab .btn {
+      background:#0f1724; border:1px solid var(--border);
+      box-shadow:0 10px 24px rgba(0,0,0,.4);
+    }
+
+    .sheet-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 1200;
+      opacity: 0; visibility: hidden; transition: .2s;
+    }
+    .sheet {  /* bottom sheet on mobile, centered dialog on wide */
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 1201;
+      background: var(--panel); border-top-left-radius: 14px; border-top-right-radius: 14px;
+      border-top: 1px solid var(--border); transform: translateY(105%);
+      transition: transform .25s ease-out;
+      max-height: 70vh; overflow: auto; box-shadow: 0 -12px 30px rgba(0,0,0,.45);
+    }
+    .sheet.open { transform: translateY(0); }
+    .sheet-backdrop.open { opacity: 1; visibility: visible; }
+    .sheet header {
+      position: sticky; top: 0; padding: .75rem .9rem; border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      display:flex; align-items:center; justify-content:space-between;
+      border-radius: 14px 14px 0 0;
+    }
+    .sheet h2 { font-size: 1rem; margin: 0; }
+    .sheet .content { padding: .6rem .9rem .9rem; }
+    .group { margin: .3rem 0 .8rem; }
+    .group h3 { margin:.2rem 0 .4rem; font-size:.95rem; color:var(--muted); }
+    .layer-row { display:flex; align-items:center; justify-content:space-between; padding:.28rem 0; }
+    .layer-row label { display:flex; align-items:center; gap:.5rem; cursor:pointer; }
+    .chip {
+      font-size:.75rem; color:#d2dcf3; background:#0f1724; border:1px solid var(--border);
+      padding:.15rem .5rem; border-radius:999px;
+    }
+
+    /* Wide screens: show as centered dialog */
+    @media (min-width: 880px) {
+      .sheet { left: 50%; right: auto; transform: translate(-50%, 105%); width: 520px; border-radius:14px; }
+      .sheet.open { transform: translate(-50%, 0); }
+    }
+
+    /* Leaflet locate dot override for visibility on imagery */
+    .loc-accuracy {
+      background: rgba(76,179,255,.15); border: 2px solid rgba(76,179,255,.25);
+    }
+
+    /* subtle toast for geolocation errors */
+    .toast {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: 84px; background:#152339; color:var(--text);
+      border:1px solid var(--border); border-radius:.5rem; padding:.45rem .6rem;
+      box-shadow:0 10px 24px rgba(0,0,0,.35); z-index: 1100; font-size:.9rem;
+      display:none;
+    }
+    .toast.show { display:block; }
   </style>
 </head>
 <body>
@@ -36,35 +104,96 @@
         <button id="satBtn" class="btn" aria-pressed="false">Satellite</button>
         <button id="resetBtn" class="btn">Reset view</button>
         <button id="fitVisibleBtn" class="btn">Fit to layers</button>
+        <button id="locateBtn" class="btn" title="Show my location">My location</button>
       </div>
     </header>
-    <div id="map"></div>
+    <div id="map" role="application" aria-label="WA map with DFES/DBCA/OEM layers"></div>
 
-    <aside class="sidebar">
-      <header><strong>Layers</strong></header>
+    <!-- Floating action buttons -->
+    <div class="fab" aria-label="Floating controls">
+      <button id="fabLocate" class="btn" title="Show my location">📍</button>
+      <button id="layersBtn" class="btn" title="Layers">🧭 Layers</button>
+    </div>
 
-      <div class="group">
-        <div class="layer-row"><label><input type="checkbox" data-layer="dfesRegions"> DFES Regions</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="frsDistricts"> Gazetted Fire Districts</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="dbcaRegionalParks"> DBCA Area (Regional Parks)</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="dbcaRegions"> DBCA Boundaries (Regions)</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="oemBoundaries"> Emergency Management Boundaries</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="lgaBoundaries"> LGA Boundaries</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="townsites"> Townsites</label></div>
-      </div>
+    <!-- Bottom sheet / popover for layers -->
+    <div id="backdrop" class="sheet-backdrop" aria-hidden="true"></div>
+    <aside id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" aria-hidden="true">
+      <header>
+        <h2 id="sheetTitle">Layers</h2>
+        <button id="closeSheet" class="btn" aria-label="Close">Close</button>
+      </header>
+      <div class="content">
+        <div class="group">
+          <h3>Boundaries</h3>
 
-      <div class="group">
-        <div class="layer-row"><label><input type="checkbox" data-layer="dfesStations"> DFES Stations</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="iccSites"> DBCA ICC Locations</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="hydrants"> Hydrants</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="standpipes"> Stand Pipes</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="ach"> ACH</label></div>
-      </div>
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="dfesRegions" /> DFES Regions</label>
+            <span class="chip">Polygons</span>
+          </div>
 
-      <div class="legend">
-        Tip: If Hydrants/Stand Pipes don’t appear immediately, zoom in to a town. This build uses server-rendered map layers for speed.
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="frsDistricts" /> Gazetted Fire Districts</label>
+            <span class="chip">Polygons</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="dbcaRegionalParks" /> DBCA Area (Regional Parks)</label>
+            <span class="chip">Polygons</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="dbcaRegions" /> DBCA Boundaries (Regions)</label>
+            <span class="chip">Polygons</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="oemBoundaries" /> Emergency Management Boundaries</label>
+            <span class="chip">Polygons</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="lgaBoundaries" /> LGA Boundaries</label>
+            <span class="chip">Polygons</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="townsites" /> Townsites</label>
+            <span class="chip">Layer</span>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Facilities & Points</h3>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="dfesStations" /> DFES Stations</label>
+            <span class="chip">Points</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="iccSites" /> DBCA ICC Locations</label>
+            <span class="chip">Points</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="hydrants" /> Hydrants</label>
+            <span class="chip">Dynamic</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="standpipes" /> Stand Pipes</label>
+            <span class="chip">Dynamic</span>
+          </div>
+
+          <div class="layer-row">
+            <label><input type="checkbox" data-layer="ach" /> ACH</label>
+            <span class="chip">Layer</span>
+          </div>
+        </div>
       </div>
     </aside>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
 
   <script>
@@ -102,7 +231,7 @@
       lga: { color:'#666', weight:1, fillColor:'#ffdf80', fillOpacity:0.2 },
       generic: { color:'#4CB3FF', weight:1, fillColor:'#4CB3FF', fillOpacity:0.08 }
     };
-    const pointSym = (c) => ({ radius:5, color:'#000', weight:1, fillColor:c, fillOpacity:0.9 });
+    const pointSym = (c) => ({ radius:6, color:'#00253b', weight:1, fillColor:c, fillOpacity:0.95 });
 
     function withErrorLog(layer, name){
       layer.on && layer.on('requesterror', e => console.error(`Layer ${name} error:`, e));
@@ -111,7 +240,7 @@
       return layer;
     }
 
-    // Feature layers (vector features)
+    // Feature layers
     const featureLayers = {
       dfesRegions: withErrorLog(L.esri.featureLayer({ url: svc.dfesRegions, style: styles.dfesRegion }), 'DFES Regions'),
       frsDistricts: withErrorLog(L.esri.featureLayer({ url: svc.frsDistricts, style: styles.frsDistrict }), 'FRS Districts'),
@@ -125,30 +254,19 @@
       ach: withErrorLog(L.esri.featureLayer({ url: svc.ach, style: styles.generic }), 'ACH')
     };
 
-    // Map image (dynamic) layers for heavy point datasets (server-rendered)
+    // Dynamic map layers for very heavy point datasets
     const mapImageLayers = {
-      hydrants: withErrorLog(L.esri.dynamicMapLayer({ url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer', layers: [6], opacity: 0.9 }), 'Hydrants (dynamic)'),
-      standpipes: withErrorLog(L.esri.dynamicMapLayer({ url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer', layers: [7], opacity: 0.9 }), 'Stand Pipes (dynamic)')
+      hydrants: withErrorLog(L.esri.dynamicMapLayer({
+        url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer',
+        layers: [6], opacity: 0.95
+      }), 'Hydrants (dynamic)'),
+      standpipes: withErrorLog(L.esri.dynamicMapLayer({
+        url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer',
+        layers: [7], opacity: 0.95
+      }), 'Stand Pipes (dynamic)')
     };
 
-    // Optional: if you want clickable popups for hydrants/standpipes instead of server-rendered raster,
-    // replace the two dynamicMapLayer entries above with FeatureLayers below (heavier):
-    /*
-    const featureHydrants = withErrorLog(L.esri.featureLayer({
-      url: svc.hydrants,
-      where: '1=1',
-      minZoom: 12,
-      pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#00bcd4'))
-    }), 'Hydrants');
-    const featureStandpipes = withErrorLog(L.esri.featureLayer({
-      url: svc.standpipes,
-      where: '1=1',
-      minZoom: 10,
-      pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#ff6d00'))
-    }), 'Stand Pipes');
-    */
-
-    // Bind simple popups for featureLayers
+    // Popups for feature layers (generic)
     function bindSimplePopup(layer, titleField) {
       layer.bindPopup(function (l) {
         const p = l.feature && l.feature.properties ? l.feature.properties : {};
@@ -171,7 +289,6 @@
     // Toggle logic
     const active = new Set();
     const layers = {
-      // feature layers
       dfesRegions: featureLayers.dfesRegions,
       frsDistricts: featureLayers.frsDistricts,
       dbcaRegionalParks: featureLayers.dbcaRegionalParks,
@@ -182,7 +299,6 @@
       dfesStations: featureLayers.dfesStations,
       iccSites: featureLayers.iccSites,
       ach: featureLayers.ach,
-      // dynamic map layers
       hydrants: mapImageLayers.hydrants,
       standpipes: mapImageLayers.standpipes
     };
@@ -194,6 +310,18 @@
       else { map.removeLayer(layer); active.delete(key); }
     }
 
+    // Bottom sheet open/close
+    const sheet = document.getElementById('sheet');
+    const backdrop = document.getElementById('backdrop');
+    const layersBtn = document.getElementById('layersBtn');
+    const closeSheet = document.getElementById('closeSheet');
+    function openSheet(){ sheet.classList.add('open'); backdrop.classList.add('open'); sheet.setAttribute('aria-hidden','false'); backdrop.setAttribute('aria-hidden','false'); }
+    function closeSheetFn(){ sheet.classList.remove('open'); backdrop.classList.remove('open'); sheet.setAttribute('aria-hidden','true'); backdrop.setAttribute('aria-hidden','true'); }
+    layersBtn.onclick = openSheet;
+    closeSheet.onclick = closeSheetFn;
+    backdrop.onclick = closeSheetFn;
+
+    // Connect checkboxes
     document.querySelectorAll('input[type=checkbox][data-layer]').forEach(cb => {
       cb.addEventListener('change', e => toggleLayer(e.target.dataset.layer, e.target.checked));
     });
@@ -206,34 +334,105 @@
     });
 
     // Basemap buttons
+    const streetBtn = document.getElementById('streetBtn');
+    const satBtn = document.getElementById('satBtn');
     function setBasemap(which) {
       if (which === 'street') {
         if (map.hasLayer(satellite)) map.removeLayer(satellite);
         if (!map.hasLayer(street)) map.addLayer(street);
-        document.getElementById('streetBtn').setAttribute('aria-pressed', 'true');
-        document.getElementById('satBtn').setAttribute('aria-pressed', 'false');
+        streetBtn.setAttribute('aria-pressed','true'); satBtn.setAttribute('aria-pressed','false');
       } else {
         if (map.hasLayer(street)) map.removeLayer(street);
         if (!map.hasLayer(satellite)) map.addLayer(satellite);
-        document.getElementById('streetBtn').setAttribute('aria-pressed', 'false');
-        document.getElementById('satBtn').setAttribute('aria-pressed', 'true');
+        streetBtn.setAttribute('aria-pressed','false'); satBtn.setAttribute('aria-pressed','true');
       }
     }
-    document.getElementById('streetBtn').onclick = () => setBasemap('street');
-    document.getElementById('satBtn').onclick = () => setBasemap('sat');
+    streetBtn.onclick = () => setBasemap('street');
+    satBtn.onclick = () => setBasemap('sat');
 
     // Fit/Reset
     document.getElementById('resetBtn').onclick = () => map.fitBounds(waBounds);
     document.getElementById('fitVisibleBtn').onclick = () => {
       const bounds = L.latLngBounds([]);
       Object.entries(layers).forEach(([k, lyr]) => {
-        if (active.has(k) && lyr.getBounds && lyr.getBounds().isValid()) {
-          bounds.extend(lyr.getBounds());
-        }
+        if (active.has(k) && lyr.getBounds && lyr.getBounds().isValid()) bounds.extend(lyr.getBounds());
       });
       if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
       else map.fitBounds(waBounds);
     };
+
+    // "Show my Location" blue dot + accuracy circle
+    const toast = document.getElementById('toast');
+    let userMarker = null;
+    let accuracyCircle = null;
+
+    function showToast(msg, ms=3000){
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.classList.remove('show'), ms);
+    }
+
+    function ensureLocationLayers(){
+      if (!userMarker) {
+        const blueDot = L.circleMarker([0,0], {
+          radius: 8, color: '#0b3d91', weight: 2, fillColor: '#2e7dff', fillOpacity: 1
+        });
+        userMarker = blueDot;
+      }
+      if (!accuracyCircle) {
+        accuracyCircle = L.circle([0,0], { radius: 0, className: 'loc-accuracy' });
+      }
+      if (!map.hasLayer(userMarker)) userMarker.addTo(map);
+      if (!map.hasLayer(accuracyCircle)) accuracyCircle.addTo(map);
+    }
+
+    function onLocationFound(e) {
+      ensureLocationLayers();
+      const latlng = e.latlng;
+      userMarker.setLatLng(latlng);
+      accuracyCircle.setLatLng(latlng).setRadius(e.accuracy || 0);
+
+      // If user location is far from current view or first time, pan/fit
+      const needsFit = !map.getBounds().contains(latlng);
+      if (needsFit) {
+        const groupBounds = L.latLngBounds([userMarker.getLatLng()]);
+        if (accuracyCircle.getRadius() > 0) {
+          // approximate accuracy circle extent
+          const r = accuracyCircle.getRadius();
+          const dLat = (r / 111320); // rough meters to degrees
+          const dLng = dLat / Math.cos(latlng.lat * Math.PI / 180);
+          groupBounds.extend([latlng.lat + dLat, latlng.lng + dLng]);
+          groupBounds.extend([latlng.lat - dLat, latlng.lng - dLng]);
+        }
+        map.fitBounds(groupBounds.pad(0.6));
+      }
+    }
+
+    function onLocationError(e) {
+      console.warn('Geolocation error:', e);
+      const reason = e && e.message ? e.message : 'Unable to get your location.';
+      showToast(`Location error: ${reason}`);
+    }
+
+    function requestLocation() {
+      if (!('geolocation' in navigator)) {
+        showToast('Geolocation not supported on this device.');
+        return;
+      }
+      // Trigger Leaflet locate (uses browser Geolocation API)
+      map.once('locationfound', onLocationFound);
+      map.once('locationerror', onLocationError);
+      map.locate({ setView: false, watch: false, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+      showToast('Locating…', 1500);
+    }
+
+    // Hook up both toolbar and FAB buttons
+    document.getElementById('locateBtn').onclick = requestLocation;
+    document.getElementById('fabLocate').onclick = requestLocation;
+
+    // Optional: prompt user to enable location when first opening on mobile (commented)
+    // if (/Mobi|Android/i.test(navigator.userAgent)) setTimeout(requestLocation, 1200);
   </script>
 </body>
 </html>

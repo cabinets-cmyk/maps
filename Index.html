@@ -7,7 +7,6 @@
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
-
   <script src="https://unpkg.com/esri-leaflet@3.0.11/dist/esri-leaflet.js" crossorigin></script>
 
   <style>
@@ -49,7 +48,6 @@
         <div class="layer-row"><label><input type="checkbox" data-layer="frsDistricts"> Gazetted Fire Districts</label></div>
         <div class="layer-row"><label><input type="checkbox" data-layer="dbcaRegionalParks"> DBCA Area (Regional Parks)</label></div>
         <div class="layer-row"><label><input type="checkbox" data-layer="dbcaRegions"> DBCA Boundaries (Regions)</label></div>
-        <div class="layer-row"><label><input type="checkbox" data-layer="dbcaDistricts"> DBCA Districts</label></div>
         <div class="layer-row"><label><input type="checkbox" data-layer="oemBoundaries"> Emergency Management Boundaries</label></div>
         <div class="layer-row"><label><input type="checkbox" data-layer="lgaBoundaries"> LGA Boundaries</label></div>
         <div class="layer-row"><label><input type="checkbox" data-layer="townsites"> Townsites</label></div>
@@ -64,7 +62,7 @@
       </div>
 
       <div class="legend">
-        Tip: If nothing shows, zoom into WA and check the browser console for any blocked requests.
+        Tip: If Hydrants/Stand Pipes don’t appear immediately, zoom in to a town. This build uses server-rendered map layers for speed.
       </div>
     </aside>
   </div>
@@ -85,7 +83,6 @@
       dfesStations: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer/33',
       dbcaRegionalParks: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/4',
       dbcaRegions: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/5',
-      dbcaDistricts: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/8',
       iccSites: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Environment/MapServer/57',
       oemBoundaries: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/31',
       hydrants: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer/6',
@@ -95,7 +92,7 @@
       townsites: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Boundaries/MapServer/15'
     };
 
-    // Styles (give polygons a slight fill so you can see them immediately)
+    // Styles
     const styles = {
       dfesRegion: { color:'#8ED8F9', weight:2, fillColor:'#8ED8F9', fillOpacity:0.08 },
       frsDistrict: { color:'#FF0000', weight:2, fillColor:'#FF0000', fillOpacity:0.06 },
@@ -107,52 +104,51 @@
     };
     const pointSym = (c) => ({ radius:5, color:'#000', weight:1, fillColor:c, fillOpacity:0.9 });
 
-    // Helper to log layer load errors
     function withErrorLog(layer, name){
-      layer.on('requesterror', e => console.error(`Layer ${name} error:`, e));
-      layer.on('loading', () => console.log(`Loading ${name}...`));
-      layer.on('load', () => console.log(`Loaded ${name}`));
+      layer.on && layer.on('requesterror', e => console.error(`Layer ${name} error:`, e));
+      layer.on && layer.on('loading', () => console.log(`Loading ${name}...`));
+      layer.on && layer.on('load', () => console.log(`Loaded ${name}`));
       return layer;
     }
 
-    // Layers
-    const layers = {
+    // Feature layers (vector features)
+    const featureLayers = {
       dfesRegions: withErrorLog(L.esri.featureLayer({ url: svc.dfesRegions, style: styles.dfesRegion }), 'DFES Regions'),
       frsDistricts: withErrorLog(L.esri.featureLayer({ url: svc.frsDistricts, style: styles.frsDistrict }), 'FRS Districts'),
       dbcaRegionalParks: withErrorLog(L.esri.featureLayer({ url: svc.dbcaRegionalParks, style: styles.parks }), 'DBCA Regional Parks'),
       dbcaRegions: withErrorLog(L.esri.featureLayer({ url: svc.dbcaRegions, style: styles.dbca }), 'DBCA Regions'),
-      dbcaDistricts: withErrorLog(L.esri.featureLayer({ url: svc.dbcaDistricts, style: styles.dbca }), 'DBCA Districts'),
       oemBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.oemBoundaries, style: styles.oem }), 'OEM Boundaries'),
       lgaBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.lgaBoundaries, style: styles.lga }), 'LGA Boundaries'),
       townsites: withErrorLog(L.esri.featureLayer({ url: svc.townsites, style: styles.generic }), 'Townsites'),
-
-      dfesStations: withErrorLog(L.esri.featureLayer({
-        url: svc.dfesStations,
-        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#ffcc00'))
-      }), 'DFES Stations'),
-
-      iccSites: withErrorLog(L.esri.featureLayer({
-        url: svc.iccSites,
-        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#00c853'))
-      }), 'ICC Sites'),
-
-      // Heavy point layers: only draw when zoomed in (>= 12). Adjust as needed.
-      hydrants: withErrorLog(L.esri.featureLayer({
-        url: svc.hydrants,
-        minZoom: 12,
-        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#00bcd4'))
-      }), 'Hydrants'),
-
-      standpipes: withErrorLog(L.esri.featureLayer({
-        url: svc.standpipes,
-        minZoom: 10,
-        pointToLayer: (geojson, latlng) => L.circleMarker(latlng, pointSym('#ff6d00'))
-      }), 'Stand Pipes'),
-
+      dfesStations: withErrorLog(L.esri.featureLayer({ url: svc.dfesStations, pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#ffcc00')) }), 'DFES Stations'),
+      iccSites: withErrorLog(L.esri.featureLayer({ url: svc.iccSites, pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#00c853')) }), 'ICC Sites'),
       ach: withErrorLog(L.esri.featureLayer({ url: svc.ach, style: styles.generic }), 'ACH')
     };
 
-    // Popups (simple generic popups)
+    // Map image (dynamic) layers for heavy point datasets (server-rendered)
+    const mapImageLayers = {
+      hydrants: withErrorLog(L.esri.dynamicMapLayer({ url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer', layers: [6], opacity: 0.9 }), 'Hydrants (dynamic)'),
+      standpipes: withErrorLog(L.esri.dynamicMapLayer({ url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer', layers: [7], opacity: 0.9 }), 'Stand Pipes (dynamic)')
+    };
+
+    // Optional: if you want clickable popups for hydrants/standpipes instead of server-rendered raster,
+    // replace the two dynamicMapLayer entries above with FeatureLayers below (heavier):
+    /*
+    const featureHydrants = withErrorLog(L.esri.featureLayer({
+      url: svc.hydrants,
+      where: '1=1',
+      minZoom: 12,
+      pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#00bcd4'))
+    }), 'Hydrants');
+    const featureStandpipes = withErrorLog(L.esri.featureLayer({
+      url: svc.standpipes,
+      where: '1=1',
+      minZoom: 10,
+      pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#ff6d00'))
+    }), 'Stand Pipes');
+    */
+
+    // Bind simple popups for featureLayers
     function bindSimplePopup(layer, titleField) {
       layer.bindPopup(function (l) {
         const p = l.feature && l.feature.properties ? l.feature.properties : {};
@@ -161,22 +157,36 @@
         return `<div class="popup"><h4>${title}</h4>${rows}</div>`;
       });
     }
-    bindSimplePopup(layers.dfesRegions, 'name');
-    bindSimplePopup(layers.frsDistricts, 'name');
-    bindSimplePopup(layers.dbcaRegionalParks, 'rpk_reg_park');
-    bindSimplePopup(layers.dbcaRegions, 'drg_region_name');
-    bindSimplePopup(layers.dbcaDistricts, 'ddt_district_name');
-    bindSimplePopup(layers.oemBoundaries, 'name');
-    bindSimplePopup(layers.lgaBoundaries, undefined);
-    bindSimplePopup(layers.townsites, undefined);
-    bindSimplePopup(layers.dfesStations, 'displaynam');
-    bindSimplePopup(layers.iccSites, 'fic_site_name');
-    bindSimplePopup(layers.hydrants, 'sap_name');
-    bindSimplePopup(layers.standpipes, 'sap_name');
-    bindSimplePopup(layers.ach, undefined);
+    bindSimplePopup(featureLayers.dfesRegions, 'name');
+    bindSimplePopup(featureLayers.frsDistricts, 'name');
+    bindSimplePopup(featureLayers.dbcaRegionalParks, 'rpk_reg_park');
+    bindSimplePopup(featureLayers.dbcaRegions, 'drg_region_name');
+    bindSimplePopup(featureLayers.oemBoundaries, 'name');
+    bindSimplePopup(featureLayers.lgaBoundaries, undefined);
+    bindSimplePopup(featureLayers.townsites, undefined);
+    bindSimplePopup(featureLayers.dfesStations, 'displaynam');
+    bindSimplePopup(featureLayers.iccSites, 'fic_site_name');
+    bindSimplePopup(featureLayers.ach, undefined);
 
     // Toggle logic
     const active = new Set();
+    const layers = {
+      // feature layers
+      dfesRegions: featureLayers.dfesRegions,
+      frsDistricts: featureLayers.frsDistricts,
+      dbcaRegionalParks: featureLayers.dbcaRegionalParks,
+      dbcaRegions: featureLayers.dbcaRegions,
+      oemBoundaries: featureLayers.oemBoundaries,
+      lgaBoundaries: featureLayers.lgaBoundaries,
+      townsites: featureLayers.townsites,
+      dfesStations: featureLayers.dfesStations,
+      iccSites: featureLayers.iccSites,
+      ach: featureLayers.ach,
+      // dynamic map layers
+      hydrants: mapImageLayers.hydrants,
+      standpipes: mapImageLayers.standpipes
+    };
+
     function toggleLayer(key, on) {
       const layer = layers[key];
       if (!layer) return;
@@ -191,7 +201,8 @@
     // Default visible
     ['dfesRegions','frsDistricts','dfesStations'].forEach(k => {
       toggleLayer(k, true);
-      document.querySelector(`input[data-layer="${k}"]`).checked = true;
+      const el = document.querySelector(`input[data-layer="${k}"]`);
+      if (el) el.checked = true;
     });
 
     // Basemap buttons
@@ -215,9 +226,10 @@
     document.getElementById('resetBtn').onclick = () => map.fitBounds(waBounds);
     document.getElementById('fitVisibleBtn').onclick = () => {
       const bounds = L.latLngBounds([]);
-      active.forEach(k => {
-        const lyr = layers[k];
-        if (lyr.getBounds && lyr.getBounds().isValid()) bounds.extend(lyr.getBounds());
+      Object.entries(layers).forEach(([k, lyr]) => {
+        if (active.has(k) && lyr.getBounds && lyr.getBounds().isValid()) {
+          bounds.extend(lyr.getBounds());
+        }
       });
       if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
       else map.fitBounds(waBounds);

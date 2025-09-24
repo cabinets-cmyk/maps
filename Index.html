@@ -31,23 +31,27 @@
       padding:.45rem .65rem; border-radius:.5rem; cursor:pointer; font-size:.9rem;
     }
     .btn[aria-pressed="true"] { outline:2px solid var(--accent); }
-    #map { width:100%; height:100%; }
+    #map { width:100%; height:100%; position:relative; }
 
-    /* Floating "Layers" control as a bottom sheet / popover */
-    .fab {
-      position: absolute; right: 12px; bottom: 12px; z-index: 1100;
-      display:flex; gap:10px; flex-direction:column;
+    /* TOP-RIGHT floating controls (replacing bottom FABs) */
+    .top-controls {
+      position: absolute; right: 12px; top: 12px; z-index: 1100;
+      display:flex; gap:10px; flex-wrap:wrap;
+      background: rgba(15,23,36,.75);
+      border: 1px solid var(--border);
+      padding: 8px;
+      border-radius: 10px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 10px 24px rgba(0,0,0,.35);
     }
-    .fab .btn {
-      background:#0f1724; border:1px solid var(--border);
-      box-shadow:0 10px 24px rgba(0,0,0,.4);
-    }
+    .ctrl-btn { min-width: 44px; min-height: 36px; }
 
+    /* Bottom sheet / popover for layers */
     .sheet-backdrop {
       position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 1200;
       opacity: 0; visibility: hidden; transition: .2s;
     }
-    .sheet {  /* bottom sheet on mobile, centered dialog on wide */
+    .sheet {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 1201;
       background: var(--panel); border-top-left-radius: 14px; border-top-right-radius: 14px;
       border-top: 1px solid var(--border); transform: translateY(105%);
@@ -73,21 +77,19 @@
       padding:.15rem .5rem; border-radius:999px;
     }
 
-    /* Wide screens: show as centered dialog */
+    /* Wide screens: center dialog */
     @media (min-width: 880px) {
       .sheet { left: 50%; right: auto; transform: translate(-50%, 105%); width: 520px; border-radius:14px; }
       .sheet.open { transform: translate(-50%, 0); }
     }
 
-    /* Leaflet locate dot override for visibility on imagery */
-    .loc-accuracy {
-      background: rgba(76,179,255,.15); border: 2px solid rgba(76,179,255,.25);
-    }
+    /* Geolocation visuals */
+    .loc-accuracy { background: rgba(76,179,255,.15); border: 2px solid rgba(76,179,255,.25); }
 
-    /* subtle toast for geolocation errors */
+    /* toast for geolocation */
     .toast {
       position: absolute; left: 50%; transform: translateX(-50%);
-      bottom: 84px; background:#152339; color:var(--text);
+      bottom: 24px; background:#152339; color:var(--text);
       border:1px solid var(--border); border-radius:.5rem; padding:.45rem .6rem;
       box-shadow:0 10px 24px rgba(0,0,0,.35); z-index: 1100; font-size:.9rem;
       display:none;
@@ -105,17 +107,19 @@
         <button id="resetBtn" class="btn">Reset view</button>
         <button id="fitVisibleBtn" class="btn">Fit to layers</button>
         <button id="locateBtn" class="btn" title="Show my location">My location</button>
+        <button id="layersBtnHeader" class="btn" title="Layers">Layers</button>
       </div>
     </header>
-    <div id="map" role="application" aria-label="WA map with DFES/DBCA/OEM layers"></div>
 
-    <!-- Floating action buttons -->
-    <div class="fab" aria-label="Floating controls">
-      <button id="fabLocate" class="btn" title="Show my location">📍</button>
-      <button id="layersBtn" class="btn" title="Layers">🧭 Layers</button>
+    <div id="map" role="application" aria-label="WA map with DFES/DBCA/OEM layers">
+      <!-- Top-right floating controls (duplicate quick access for iPad visibility) -->
+      <div class="top-controls" aria-label="Map controls">
+        <button id="topLocate" class="btn ctrl-btn" title="Show my location">📍</button>
+        <button id="topLayers" class="btn ctrl-btn" title="Layers">🧭</button>
+      </div>
     </div>
 
-    <!-- Bottom sheet / popover for layers -->
+    <!-- Layers bottom sheet -->
     <div id="backdrop" class="sheet-backdrop" aria-hidden="true"></div>
     <aside id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" aria-hidden="true">
       <header>
@@ -254,7 +258,7 @@
       ach: withErrorLog(L.esri.featureLayer({ url: svc.ach, style: styles.generic }), 'ACH')
     };
 
-    // Dynamic map layers for very heavy point datasets
+    // Dynamic map layers for heavy point datasets
     const mapImageLayers = {
       hydrants: withErrorLog(L.esri.dynamicMapLayer({
         url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer',
@@ -310,14 +314,16 @@
       else { map.removeLayer(layer); active.delete(key); }
     }
 
-    // Bottom sheet open/close
+    // Sheet open/close
     const sheet = document.getElementById('sheet');
     const backdrop = document.getElementById('backdrop');
-    const layersBtn = document.getElementById('layersBtn');
+    const layersBtnHeader = document.getElementById('layersBtnHeader');
+    const topLayers = document.getElementById('topLayers');
     const closeSheet = document.getElementById('closeSheet');
     function openSheet(){ sheet.classList.add('open'); backdrop.classList.add('open'); sheet.setAttribute('aria-hidden','false'); backdrop.setAttribute('aria-hidden','false'); }
     function closeSheetFn(){ sheet.classList.remove('open'); backdrop.classList.remove('open'); sheet.setAttribute('aria-hidden','true'); backdrop.setAttribute('aria-hidden','true'); }
-    layersBtn.onclick = openSheet;
+    layersBtnHeader.onclick = openSheet;
+    topLayers.onclick = openSheet;
     closeSheet.onclick = closeSheetFn;
     backdrop.onclick = closeSheetFn;
 
@@ -361,7 +367,7 @@
       else map.fitBounds(waBounds);
     };
 
-    // "Show my Location" blue dot + accuracy circle
+    // Show my Location (blue dot + accuracy)
     const toast = document.getElementById('toast');
     let userMarker = null;
     let accuracyCircle = null;
@@ -375,10 +381,7 @@
 
     function ensureLocationLayers(){
       if (!userMarker) {
-        const blueDot = L.circleMarker([0,0], {
-          radius: 8, color: '#0b3d91', weight: 2, fillColor: '#2e7dff', fillOpacity: 1
-        });
-        userMarker = blueDot;
+        userMarker = L.circleMarker([0,0], { radius: 8, color: '#0b3d91', weight: 2, fillColor: '#2e7dff', fillOpacity: 1 });
       }
       if (!accuracyCircle) {
         accuracyCircle = L.circle([0,0], { radius: 0, className: 'loc-accuracy' });
@@ -392,25 +395,21 @@
       const latlng = e.latlng;
       userMarker.setLatLng(latlng);
       accuracyCircle.setLatLng(latlng).setRadius(e.accuracy || 0);
-
-      // If user location is far from current view or first time, pan/fit
       const needsFit = !map.getBounds().contains(latlng);
       if (needsFit) {
-        const groupBounds = L.latLngBounds([userMarker.getLatLng()]);
-        if (accuracyCircle.getRadius() > 0) {
-          // approximate accuracy circle extent
-          const r = accuracyCircle.getRadius();
-          const dLat = (r / 111320); // rough meters to degrees
+        const r = accuracyCircle.getRadius();
+        if (r > 0) {
+          const dLat = (r / 111320);
           const dLng = dLat / Math.cos(latlng.lat * Math.PI / 180);
-          groupBounds.extend([latlng.lat + dLat, latlng.lng + dLng]);
-          groupBounds.extend([latlng.lat - dLat, latlng.lng - dLng]);
+          const b = L.latLngBounds([latlng], [latlng.lat + dLat, latlng.lng + dLng], [latlng.lat - dLat, latlng.lng - dLng]);
+          map.fitBounds(b.pad(0.6));
+        } else {
+          map.setView(latlng, Math.max(map.getZoom(), 14));
         }
-        map.fitBounds(groupBounds.pad(0.6));
       }
     }
 
     function onLocationError(e) {
-      console.warn('Geolocation error:', e);
       const reason = e && e.message ? e.message : 'Unable to get your location.';
       showToast(`Location error: ${reason}`);
     }
@@ -420,19 +419,16 @@
         showToast('Geolocation not supported on this device.');
         return;
       }
-      // Trigger Leaflet locate (uses browser Geolocation API)
       map.once('locationfound', onLocationFound);
       map.once('locationerror', onLocationError);
       map.locate({ setView: false, watch: false, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
       showToast('Locating…', 1500);
     }
 
-    // Hook up both toolbar and FAB buttons
+    // Hook buttons (header and top-right)
     document.getElementById('locateBtn').onclick = requestLocation;
-    document.getElementById('fabLocate').onclick = requestLocation;
-
-    // Optional: prompt user to enable location when first opening on mobile (commented)
-    // if (/Mobi|Android/i.test(navigator.userAgent)) setTimeout(requestLocation, 1200);
+    document.getElementById('topLocate').onclick = requestLocation;
+    document.getElementById('topLayers').onclick = openSheet;
   </script>
 </body>
 </html>

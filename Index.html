@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>WA Emergency & Planning Map</title>
+  <title>Mapping Pro</title>
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin />
@@ -15,9 +15,9 @@
   <style>
     :root{
       --bg:#0b1220; --panel:#141c2b; --text:#e7eefc; --muted:#a9b3c7; --accent:#4cb3ff;
-      --border:#22304a; --danger:#ff4d4f; --ok:#28c76f;
+      --border:#22304a;
     }
-    html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; }
     #app { height:100%; display:grid; grid-template-rows:auto 1fr; }
 
     header {
@@ -33,18 +33,42 @@
     .btn[aria-pressed="true"] { outline:2px solid var(--accent); }
     #map { width:100%; height:100%; position:relative; }
 
-    /* TOP-RIGHT floating controls (replacing bottom FABs) */
+    /* TOP-RIGHT floating controls */
     .top-controls {
-      position: absolute; right: 12px; top: 12px; z-index: 1100;
-      display:flex; gap:10px; flex-wrap:wrap;
-      background: rgba(15,23,36,.75);
-      border: 1px solid var(--border);
-      padding: 8px;
-      border-radius: 10px;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 10px 24px rgba(0,0,0,.35);
+      position:absolute; right:12px; top:12px; z-index:1100;
+      display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start;
+      background:rgba(15,23,36,.75); border:1px solid var(--border);
+      padding:8px; border-radius:10px; backdrop-filter:blur(6px);
+      box-shadow:0 10px 24px rgba(0,0,0,.35);
     }
-    .ctrl-btn { min-width: 44px; min-height: 36px; }
+    .ctrl-btn { min-width:44px; min-height:36px; }
+
+    /* Small legend shown when Fire Stations are on */
+    .mini-legend {
+      margin-top:6px;
+      background:rgba(10,16,27,.9);
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:6px 8px;
+      font-size:.78rem;
+      line-height:1.25;
+      color:#d9e6ff;
+      box-shadow:0 6px 14px rgba(0,0,0,.3);
+      display:none; /* toggled via JS */
+      width:max-content;
+      max-width: 60vw;
+    }
+    .legend-row { display:flex; align-items:center; gap:6px; margin:3px 0; white-space:nowrap; }
+    .dot {
+      width:10px; height:10px; border-radius:50%;
+      border:2px solid #001829; display:inline-block;
+    }
+    .dot.white { background:#ffffff; border-color:#1f2937; }
+    .dot.red { background:#ff3b30; }
+    .dot.orange { background:#ff9500; }
+    .dot.green { background:#34c759; }
+    .dot.blue { background:#0a84ff; }
+    .dot.purple { background:#bf5af2; }
 
     /* Bottom sheet / popover for layers */
     .sheet-backdrop {
@@ -86,7 +110,7 @@
     /* Geolocation visuals */
     .loc-accuracy { background: rgba(76,179,255,.15); border: 2px solid rgba(76,179,255,.25); }
 
-    /* toast for geolocation */
+    /* toast */
     .toast {
       position: absolute; left: 50%; transform: translateX(-50%);
       bottom: 24px; background:#152339; color:var(--text);
@@ -100,7 +124,7 @@
 <body>
   <div id="app">
     <header>
-      <h1>WA Emergency & Planning Map</h1>
+      <h1>Mapping Pro</h1>
       <div class="toolbar">
         <button id="streetBtn" class="btn" aria-pressed="true">Street</button>
         <button id="satBtn" class="btn" aria-pressed="false">Satellite</button>
@@ -112,10 +136,20 @@
     </header>
 
     <div id="map" role="application" aria-label="WA map with DFES/DBCA/OEM layers">
-      <!-- Top-right floating controls (duplicate quick access for iPad visibility) -->
+      <!-- Top-right controls and mini legend container -->
       <div class="top-controls" aria-label="Map controls">
-        <button id="topLocate" class="btn ctrl-btn" title="Show my location">📍</button>
-        <button id="topLayers" class="btn ctrl-btn" title="Layers">🧭</button>
+        <div style="display:flex; gap:10px;">
+          <button id="topLocate" class="btn ctrl-btn" title="Show my location">📍</button>
+          <button id="topLayers" class="btn ctrl-btn" title="Layers">🧭</button>
+        </div>
+        <div id="miniLegend" class="mini-legend" aria-live="polite" aria-label="Fire Stations legend">
+          <div class="legend-row"><span class="dot white"></span> DFES Office</div>
+          <div class="legend-row"><span class="dot purple"></span> CFRS</div>
+          <div class="legend-row"><span class="dot red"></span> VFRS</div>
+          <div class="legend-row"><span class="dot blue"></span> VFESU</div>
+          <div class="legend-row"><span class="dot green"></span> BFB</div>
+          <div class="legend-row"><span class="dot orange"></span> SESU</div>
+        </div>
       </div>
     </div>
 
@@ -170,7 +204,7 @@
           <h3>Facilities & Points</h3>
 
           <div class="layer-row">
-            <label><input type="checkbox" data-layer="dfesStations" /> DFES Stations</label>
+            <label><input type="checkbox" data-layer="fireStations" /> Fire Stations</label>
             <span class="chip">Points</span>
           </div>
 
@@ -235,7 +269,35 @@
       lga: { color:'#666', weight:1, fillColor:'#ffdf80', fillOpacity:0.2 },
       generic: { color:'#4CB3FF', weight:1, fillColor:'#4CB3FF', fillOpacity:0.08 }
     };
-    const pointSym = (c) => ({ radius:6, color:'#00253b', weight:1, fillColor:c, fillOpacity:0.95 });
+
+    // Fire Stations styling by type
+    function fireStationColor(typeRaw) {
+      const t = String(typeRaw || '').trim().toUpperCase();
+      if (t.includes('REGIONAL DIRECTORATE') || t === 'DFES' || t.includes('DFES')) return '#ffffff'; // DFES Office
+      if (t === 'CFRS' || t.includes('CAREER FIRE')) return '#bf5af2'; // CFRS
+      if (t === 'VFRS' || t.includes('VOLUNTEER FIRE AND RESCUE') || t.includes('FIRE & RESCUE')) return '#ff3b30'; // VFRS
+      if (t === 'VFESU' || t.includes('VOLUNTEER FIRE & EMERGENCY')) return '#0a84ff'; // VFESU
+      if (t === 'BFB' || t.includes('BUSH FIRE BRIGADE')) return '#34c759'; // BFB
+      if (t === 'SESU' || t.includes('STATE EMERGENCY SERVICE')) return '#ff9500'; // SESU
+      return '#ffd60a';
+    }
+    function fireStationMarkerStyle(type) {
+      const fill = fireStationColor(type);
+      const stroke = (fill.toLowerCase() === '#ffffff') ? '#1f2937' : '#001829';
+      return { radius: 7, color: stroke, weight: 2, fillColor: fill, fillOpacity: 1 };
+    }
+
+    // Priority score: higher = should be on top
+    function fireStationPriority(typeRaw) {
+      const t = String(typeRaw || '').trim().toUpperCase();
+      if (t.includes('REGIONAL DIRECTORATE') || t === 'DFES' || t.includes('DFES')) return 6; // DFES Office
+      if (t === 'CFRS' || t.includes('CAREER FIRE')) return 5;
+      if (t === 'VFRS' || t.includes('VOLUNTEER FIRE AND RESCUE') || t.includes('FIRE & RESCUE')) return 4;
+      if (t === 'VFESU' || t.includes('VOLUNTEER FIRE & EMERGENCY')) return 3;
+      if (t === 'BFB' || t.includes('BUSH FIRE BRIGADE')) return 2;
+      if (t === 'SESU' || t.includes('STATE EMERGENCY SERVICE')) return 1;
+      return 0;
+    }
 
     function withErrorLog(layer, name){
       layer.on && layer.on('requesterror', e => console.error(`Layer ${name} error:`, e));
@@ -244,17 +306,43 @@
       return layer;
     }
 
+    // Create custom panes for each priority so overlapping points render with correct stacking
+    const panes = {};
+    function ensurePaneForPriority(priority){
+      const key = `pane-fire-${priority}`;
+      if (!panes[key]) {
+        const p = map.createPane(key);
+        // Base overlayPane z-index is ~400; markerPane is 600. Use 640-660 range for fire types.
+        p.style.zIndex = String(640 + priority); // higher priority => higher z-index
+        panes[key] = key;
+      }
+      return panes[key];
+    }
+
     // Feature layers
     const featureLayers = {
       dfesRegions: withErrorLog(L.esri.featureLayer({ url: svc.dfesRegions, style: styles.dfesRegion }), 'DFES Regions'),
-      frsDistricts: withErrorLog(L.esri.featureLayer({ url: svc.frsDistricts, style: styles.frsDistrict }), 'FRS Districts'),
+      frsDistricts: withErrorLog(L.esri.featureLayer({ url: svc.frsDistricts, style: styles.frsDistrict }), 'Gazetted Fire Districts'),
       dbcaRegionalParks: withErrorLog(L.esri.featureLayer({ url: svc.dbcaRegionalParks, style: styles.parks }), 'DBCA Regional Parks'),
       dbcaRegions: withErrorLog(L.esri.featureLayer({ url: svc.dbcaRegions, style: styles.dbca }), 'DBCA Regions'),
       oemBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.oemBoundaries, style: styles.oem }), 'OEM Boundaries'),
       lgaBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.lgaBoundaries, style: styles.lga }), 'LGA Boundaries'),
       townsites: withErrorLog(L.esri.featureLayer({ url: svc.townsites, style: styles.generic }), 'Townsites'),
-      dfesStations: withErrorLog(L.esri.featureLayer({ url: svc.dfesStations, pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#ffcc00')) }), 'DFES Stations'),
-      iccSites: withErrorLog(L.esri.featureLayer({ url: svc.iccSites, pointToLayer: (g, ll) => L.circleMarker(ll, pointSym('#00c853')) }), 'ICC Sites'),
+      // Fire Stations: assign pane per-feature based on priority
+      fireStations: withErrorLog(L.esri.featureLayer({
+        url: svc.dfesStations,
+        pointToLayer: (geojson, latlng) => {
+          const p = geojson.properties || {};
+          const pri = fireStationPriority(p.type);
+          const pane = ensurePaneForPriority(pri);
+          return L.circleMarker(latlng, { ...fireStationMarkerStyle(p.type), pane });
+        }
+      }), 'Fire Stations'),
+      // DBCA ICCs as black dots
+      iccSites: withErrorLog(L.esri.featureLayer({
+        url: svc.iccSites,
+        pointToLayer: (g, ll) => L.circleMarker(ll, { radius:6, color:'#000', weight:1.5, fillColor:'#000', fillOpacity:1 })
+      }), 'DBCA ICC Locations'),
       ach: withErrorLog(L.esri.featureLayer({ url: svc.ach, style: styles.generic }), 'ACH')
     };
 
@@ -270,7 +358,7 @@
       }), 'Stand Pipes (dynamic)')
     };
 
-    // Popups for feature layers (generic)
+    // Generic popups
     function bindSimplePopup(layer, titleField) {
       layer.bindPopup(function (l) {
         const p = l.feature && l.feature.properties ? l.feature.properties : {};
@@ -286,9 +374,18 @@
     bindSimplePopup(featureLayers.oemBoundaries, 'name');
     bindSimplePopup(featureLayers.lgaBoundaries, undefined);
     bindSimplePopup(featureLayers.townsites, undefined);
-    bindSimplePopup(featureLayers.dfesStations, 'displaynam');
-    bindSimplePopup(featureLayers.iccSites, 'fic_site_name');
     bindSimplePopup(featureLayers.ach, undefined);
+
+    // Fire Stations popup (displaynam then type)
+    featureLayers.fireStations.bindPopup(function (layer) {
+      const p = layer.feature?.properties || {};
+      const display = p.displaynam || 'Station';
+      const type = (p.type || '').toString().trim().toUpperCase();
+      return `<div class="popup">
+        <h4>${display}</h4>
+        <div><strong>Type</strong>: ${type}</div>
+      </div>`;
+    });
 
     // Toggle logic
     const active = new Set();
@@ -300,7 +397,7 @@
       oemBoundaries: featureLayers.oemBoundaries,
       lgaBoundaries: featureLayers.lgaBoundaries,
       townsites: featureLayers.townsites,
-      dfesStations: featureLayers.dfesStations,
+      fireStations: featureLayers.fireStations,
       iccSites: featureLayers.iccSites,
       ach: featureLayers.ach,
       hydrants: mapImageLayers.hydrants,
@@ -310,8 +407,25 @@
     function toggleLayer(key, on) {
       const layer = layers[key];
       if (!layer) return;
-      if (on) { layer.addTo(map); active.add(key); }
-      else { map.removeLayer(layer); active.delete(key); }
+      if (on) {
+        layer.addTo(map);
+        active.add(key);
+        if (key === 'fireStations') {
+          // not needed to bringToFront, panes control stacking, but safe:
+          try { layer.bringToFront && layer.bringToFront(); } catch (_) {}
+          showMiniLegend(true);
+        }
+      } else {
+        map.removeLayer(layer);
+        active.delete(key);
+        if (key === 'fireStations') showMiniLegend(false);
+      }
+    }
+
+    // Mini-legend show/hide
+    const miniLegend = document.getElementById('miniLegend');
+    function showMiniLegend(show) {
+      miniLegend.style.display = show ? 'block' : 'none';
     }
 
     // Sheet open/close
@@ -333,11 +447,12 @@
     });
 
     // Default visible
-    ['dfesRegions','frsDistricts','dfesStations'].forEach(k => {
+    ['dfesRegions','frsDistricts','fireStations'].forEach(k => {
       toggleLayer(k, true);
       const el = document.querySelector(`input[data-layer="${k}"]`);
       if (el) el.checked = true;
     });
+    showMiniLegend(true); // reflect initial state
 
     // Basemap buttons
     const streetBtn = document.getElementById('streetBtn');

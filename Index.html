@@ -296,7 +296,7 @@
       generic: { color:'#4CB3FF', weight:1, fillColor:'#4CB3FF', fillOpacity:0.08 }
     };
 
-    // Fire Stations styling by type
+    // Fire Stations styling by type and priority
     function fireStationColor(typeRaw) {
       const t = String(typeRaw || '').trim().toUpperCase();
       if (t.includes('REGIONAL DIRECTORATE') || t === 'DFES' || t.includes('DFES')) return '#ffffff'; // DFES Office
@@ -463,13 +463,19 @@
       cb.addEventListener('change', e => toggleLayer(e.target.dataset.layer, e.target.checked));
     });
 
-    // Default visible
-    ['dfesRegions','frsDistricts','fireStations'].forEach(k => {
+    // Default visible on load: ONLY Fire Stations
+    ['fireStations'].forEach(k => {
       toggleLayer(k, true);
       const el = document.querySelector(`input[data-layer="${k}"]`);
       if (el) el.checked = true;
     });
-    showMiniLegend(true); // reflect initial state
+    // Ensure all other checkboxes start unchecked (in case of cached DOM state)
+    ['dfesRegions','frsDistricts','dbcaRegionalParks','dbcaRegions','oemBoundaries','lgaBoundaries','townsites','iccSites','ach','hydrants','standpipes']
+      .forEach(k => {
+        const el = document.querySelector(`input[data-layer="${k}"]`);
+        if (el) el.checked = false;
+      });
+    showMiniLegend(true); // legend visible because Fire Stations are on
 
     // Basemap buttons
     const streetBtn = document.getElementById('streetBtn');
@@ -488,7 +494,7 @@
     streetBtn.onclick = () => setBasemap('street');
     satBtn.onclick = () => setBasemap('sat');
 
-    // Fit/Reset
+    // Reset view
     document.getElementById('resetBtn').onclick = () => map.fitBounds(waBounds);
 
     // Show my Location (blue dot + accuracy)
@@ -514,7 +520,6 @@
       if (!map.hasLayer(accuracyCircle)) accuracyCircle.addTo(map);
     }
 
-    // Permissions helper using Permissions API where available
     async function checkGeolocationPermission() {
       if (!navigator.permissions || !navigator.permissions.query) return null;
       try {
@@ -546,10 +551,9 @@
     promptClose.onclick = closePrompt;
     promptRetry.onclick = () => { closePrompt(); requestLocation(true); };
     promptHelp.onclick = () => {
-      // Try to open OS/browser settings guidance
       const ua = navigator.userAgent || '';
       if (/iPad|iPhone|iPod/i.test(ua)) {
-        alert('On iPad/iPhone: Settings > Privacy & Security > Location Services > enable. Then in Safari: Settings > Safari > Location > Allow.');
+        alert('On iPad/iPhone: Settings > Privacy & Security > Location Services > enable. Then in Safari: Settings > Safari > Location > Allow for this site.');
       } else if (/Android/i.test(ua)) {
         alert('On Android: Settings > Location > turn on. In Chrome: Settings > Site settings > Location > Allow for this site.');
       } else {
@@ -577,10 +581,8 @@
     }
 
     function onLocationError(e) {
-      console.warn('Geolocation error:', e);
       const msg = e && e.message ? e.message : 'Unable to get your location.';
       showToast(`Location error: ${msg}`);
-      // If permission denied or unavailable, prompt user to enable
       const m = (msg + '').toLowerCase();
       if (m.includes('denied') || m.includes('permission') || m.includes('unavailable') || m.includes('disabled')) {
         openPrompt();
@@ -588,7 +590,6 @@
     }
 
     async function requestLocation(fromRetry=false) {
-      // If Permissions API says denied, show prompt immediately unless retry explicitly requested
       const perm = await checkGeolocationPermission();
       if (perm === 'denied' && !fromRetry) {
         openPrompt();

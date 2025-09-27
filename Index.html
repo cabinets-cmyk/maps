@@ -110,6 +110,21 @@
     /* Geolocation visuals */
     .loc-accuracy { background: rgba(76,179,255,.15); border: 2px solid rgba(76,179,255,.25); }
 
+    /* prompt modal for enabling location */
+    .prompt-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1400; display:none;
+    }
+    .prompt {
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      background: #0f1724; border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px; width: min(92vw, 420px); z-index: 1401; display:none; color: var(--text);
+      box-shadow: 0 20px 50px rgba(0,0,0,.5);
+    }
+    .prompt h3 { margin: 0 0 8px; font-size: 1rem; }
+    .prompt p { margin: 0 0 12px; color: var(--muted); }
+    .prompt .actions { display:flex; gap:8px; justify-content:flex-end; }
+    .prompt .actions button { padding:.5rem .75rem; }
+
     /* toast */
     .toast {
       position: absolute; left: 50%; transform: translateX(-50%);
@@ -129,7 +144,6 @@
         <button id="streetBtn" class="btn" aria-pressed="true">Street</button>
         <button id="satBtn" class="btn" aria-pressed="false">Satellite</button>
         <button id="resetBtn" class="btn">Reset view</button>
-        <button id="fitVisibleBtn" class="btn">Fit to layers</button>
         <button id="locateBtn" class="btn" title="Show my location">My location</button>
         <button id="layersBtnHeader" class="btn" title="Layers">Layers</button>
       </div>
@@ -204,7 +218,7 @@
           <h3>Facilities & Points</h3>
 
           <div class="layer-row">
-            <label><input type="checkbox" data-layer="fireStations" /> Fire Stations</label>
+            <label><input type="checkbox" data-layer="fireStations" checked /> Fire Stations</label>
             <span class="chip">Points</span>
           </div>
 
@@ -230,6 +244,18 @@
         </div>
       </div>
     </aside>
+
+    <!-- Location services prompt -->
+    <div id="promptBackdrop" class="prompt-backdrop" aria-hidden="true"></div>
+    <div id="locationPrompt" class="prompt" role="dialog" aria-modal="true" aria-labelledby="locPromptTitle" aria-hidden="true">
+      <h3 id="locPromptTitle">Enable Location Services</h3>
+      <p>To zoom to your current position, please enable Location Services for your browser.</p>
+      <div class="actions">
+        <button id="promptHelp" class="btn">How to enable</button>
+        <button id="promptRetry" class="btn">Try again</button>
+        <button id="promptClose" class="btn">Close</button>
+      </div>
+    </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
@@ -286,8 +312,6 @@
       const stroke = (fill.toLowerCase() === '#ffffff') ? '#1f2937' : '#001829';
       return { radius: 7, color: stroke, weight: 2, fillColor: fill, fillOpacity: 1 };
     }
-
-    // Priority score: higher = should be on top
     function fireStationPriority(typeRaw) {
       const t = String(typeRaw || '').trim().toUpperCase();
       if (t.includes('REGIONAL DIRECTORATE') || t === 'DFES' || t.includes('DFES')) return 6; // DFES Office
@@ -306,13 +330,12 @@
       return layer;
     }
 
-    // Create custom panes for each priority so overlapping points render with correct stacking
+    // Create panes by priority to ensure top-most rendering for overlaps
     const panes = {};
     function ensurePaneForPriority(priority){
       const key = `pane-fire-${priority}`;
       if (!panes[key]) {
         const p = map.createPane(key);
-        // Base overlayPane z-index is ~400; markerPane is 600. Use 640-660 range for fire types.
         p.style.zIndex = String(640 + priority); // higher priority => higher z-index
         panes[key] = key;
       }
@@ -328,7 +351,6 @@
       oemBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.oemBoundaries, style: styles.oem }), 'OEM Boundaries'),
       lgaBoundaries: withErrorLog(L.esri.featureLayer({ url: svc.lgaBoundaries, style: styles.lga }), 'LGA Boundaries'),
       townsites: withErrorLog(L.esri.featureLayer({ url: svc.townsites, style: styles.generic }), 'Townsites'),
-      // Fire Stations: assign pane per-feature based on priority
       fireStations: withErrorLog(L.esri.featureLayer({
         url: svc.dfesStations,
         pointToLayer: (geojson, latlng) => {
@@ -338,7 +360,6 @@
           return L.circleMarker(latlng, { ...fireStationMarkerStyle(p.type), pane });
         }
       }), 'Fire Stations'),
-      // DBCA ICCs as black dots
       iccSites: withErrorLog(L.esri.featureLayer({
         url: svc.iccSites,
         pointToLayer: (g, ll) => L.circleMarker(ll, { radius:6, color:'#000', weight:1.5, fillColor:'#000', fillOpacity:1 })
@@ -346,7 +367,7 @@
       ach: withErrorLog(L.esri.featureLayer({ url: svc.ach, style: styles.generic }), 'ACH')
     };
 
-    // Dynamic map layers for heavy point datasets
+    // Dynamic map layers
     const mapImageLayers = {
       hydrants: withErrorLog(L.esri.dynamicMapLayer({
         url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Infrastructure_and_Utilities/MapServer',
@@ -410,11 +431,7 @@
       if (on) {
         layer.addTo(map);
         active.add(key);
-        if (key === 'fireStations') {
-          // not needed to bringToFront, panes control stacking, but safe:
-          try { layer.bringToFront && layer.bringToFront(); } catch (_) {}
-          showMiniLegend(true);
-        }
+        if (key === 'fireStations') showMiniLegend(true);
       } else {
         map.removeLayer(layer);
         active.delete(key);
@@ -473,14 +490,6 @@
 
     // Fit/Reset
     document.getElementById('resetBtn').onclick = () => map.fitBounds(waBounds);
-    document.getElementById('fitVisibleBtn').onclick = () => {
-      const bounds = L.latLngBounds([]);
-      Object.entries(layers).forEach(([k, lyr]) => {
-        if (active.has(k) && lyr.getBounds && lyr.getBounds().isValid()) bounds.extend(lyr.getBounds());
-      });
-      if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
-      else map.fitBounds(waBounds);
-    };
 
     // Show my Location (blue dot + accuracy)
     const toast = document.getElementById('toast');
@@ -505,44 +514,99 @@
       if (!map.hasLayer(accuracyCircle)) accuracyCircle.addTo(map);
     }
 
+    // Permissions helper using Permissions API where available
+    async function checkGeolocationPermission() {
+      if (!navigator.permissions || !navigator.permissions.query) return null;
+      try {
+        const status = await navigator.permissions.query({ name: 'geolocation' });
+        return status.state; // 'granted' | 'prompt' | 'denied'
+      } catch { return null; }
+    }
+
+    // Location prompt modal controls
+    const promptBackdrop = document.getElementById('promptBackdrop');
+    const locPrompt = document.getElementById('locationPrompt');
+    const promptHelp = document.getElementById('promptHelp');
+    const promptRetry = document.getElementById('promptRetry');
+    const promptClose = document.getElementById('promptClose');
+
+    function openPrompt(){
+      promptBackdrop.style.display = 'block';
+      locPrompt.style.display = 'block';
+      promptBackdrop.setAttribute('aria-hidden','false');
+      locPrompt.setAttribute('aria-hidden','false');
+    }
+    function closePrompt(){
+      promptBackdrop.style.display = 'none';
+      locPrompt.style.display = 'none';
+      promptBackdrop.setAttribute('aria-hidden','true');
+      locPrompt.setAttribute('aria-hidden','true');
+    }
+
+    promptClose.onclick = closePrompt;
+    promptRetry.onclick = () => { closePrompt(); requestLocation(true); };
+    promptHelp.onclick = () => {
+      // Try to open OS/browser settings guidance
+      const ua = navigator.userAgent || '';
+      if (/iPad|iPhone|iPod/i.test(ua)) {
+        alert('On iPad/iPhone: Settings > Privacy & Security > Location Services > enable. Then in Safari: Settings > Safari > Location > Allow.');
+      } else if (/Android/i.test(ua)) {
+        alert('On Android: Settings > Location > turn on. In Chrome: Settings > Site settings > Location > Allow for this site.');
+      } else {
+        alert('Please enable Location Services in your OS, and allow location in your browser for this site.');
+      }
+    };
+
     function onLocationFound(e) {
       ensureLocationLayers();
       const latlng = e.latlng;
       userMarker.setLatLng(latlng);
       accuracyCircle.setLatLng(latlng).setRadius(e.accuracy || 0);
-      const needsFit = !map.getBounds().contains(latlng);
-      if (needsFit) {
-        const r = accuracyCircle.getRadius();
-        if (r > 0) {
-          const dLat = (r / 111320);
-          const dLng = dLat / Math.cos(latlng.lat * Math.PI / 180);
-          const b = L.latLngBounds([latlng], [latlng.lat + dLat, latlng.lng + dLng], [latlng.lat - dLat, latlng.lng - dLng]);
-          map.fitBounds(b.pad(0.6));
-        } else {
-          map.setView(latlng, Math.max(map.getZoom(), 14));
-        }
+
+      // Always go to user's location when button pressed
+      const r = accuracyCircle.getRadius();
+      if (r > 0) {
+        const dLat = (r / 111320);
+        const dLng = dLat / Math.cos(latlng.lat * Math.PI / 180);
+        const b = L.latLngBounds([latlng], [latlng.lat + dLat, latlng.lng + dLng], [latlng.lat - dLat, latlng.lng - dLng]);
+        map.fitBounds(b.pad(0.6));
+      } else {
+        map.setView(latlng, Math.max(map.getZoom(), 16));
       }
+      showToast('Location found', 1500);
     }
 
     function onLocationError(e) {
-      const reason = e && e.message ? e.message : 'Unable to get your location.';
-      showToast(`Location error: ${reason}`);
+      console.warn('Geolocation error:', e);
+      const msg = e && e.message ? e.message : 'Unable to get your location.';
+      showToast(`Location error: ${msg}`);
+      // If permission denied or unavailable, prompt user to enable
+      const m = (msg + '').toLowerCase();
+      if (m.includes('denied') || m.includes('permission') || m.includes('unavailable') || m.includes('disabled')) {
+        openPrompt();
+      }
     }
 
-    function requestLocation() {
+    async function requestLocation(fromRetry=false) {
+      // If Permissions API says denied, show prompt immediately unless retry explicitly requested
+      const perm = await checkGeolocationPermission();
+      if (perm === 'denied' && !fromRetry) {
+        openPrompt();
+        return;
+      }
       if (!('geolocation' in navigator)) {
         showToast('Geolocation not supported on this device.');
         return;
       }
       map.once('locationfound', onLocationFound);
       map.once('locationerror', onLocationError);
-      map.locate({ setView: false, watch: false, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+      map.locate({ setView: false, watch: false, enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
       showToast('Locating…', 1500);
     }
 
-    // Hook buttons (header and top-right)
-    document.getElementById('locateBtn').onclick = requestLocation;
-    document.getElementById('topLocate').onclick = requestLocation;
+    // Hook buttons (header and top-right) to go to user location
+    document.getElementById('locateBtn').onclick = () => requestLocation(false);
+    document.getElementById('topLocate').onclick = () => requestLocation(false);
     document.getElementById('topLayers').onclick = openSheet;
   </script>
 </body>
